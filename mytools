@@ -1,0 +1,19 @@
+#!/usr/bin/env Rscript
+
+VERSION <- "0.1.0"
+
+usage <- function() {
+  cat("usage: mytools <command> [options]\n",
+      "       mytools --version\n",
+      sep = "", file = stderr())
+}
+
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) == 1 && args[1] == "--version") {
+  cat(sprintf("mytools %s\n", VERSION))
+  quit(save = "no", status = 0)
+}
+
+usage()
+quit(save = "no", status = 2)
