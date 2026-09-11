@@ -97,12 +97,17 @@ cmd_subtract <- function(args) {
   rows_out <- list()
   starts_out <- list()
   ends_out <- list()
+  # nolint start: assignment_linter.
+  # <<- is deliberate and contained: emit() accumulates into the three lists in
+  # this function's own frame, never a global. The alternative is rebuilding the
+  # lists on every call, which is the quadratic growth SPEC.md section 6 rules out.
   emit <- function(rows, s, e) {
     k <- length(rows_out) + 1L
     rows_out[[k]] <<- rows
     starts_out[[k]] <<- s
     ends_out[[k]] <<- e
   }
+  # nolint end
 
   for (ch in unique(a$chrom)) {
     rows <- which(a$chrom == ch)
