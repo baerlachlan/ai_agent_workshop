@@ -22,9 +22,9 @@
 #
 # This is oracle behaviour. Do not "correct" it -- see SPEC.md section 4.
 #
-# One deliberate non-reproduction: a zero-length -b record at position 0 widens
-# to start -1, which makes bedtools abort with "illegal bin number -1" and exit
-# 1. We handle it without complaint. No fixture contains that case.
+# The one place the widening has no valid answer is a zero-length -b record at
+# position 0, which widens to a start of -1. bedtools refuses the whole -b file
+# there; cmd_subtract() below matches that refusal.
 
 parse_subtract_args <- function(args) {
   a_path <- NULL
@@ -65,14 +65,30 @@ cmd_subtract <- function(args) {
   b <- read_bed(opt$b)
   a <- read_bed(opt$a)
 
+  # Widen zero-length records by one base each side (see header comment).
+  b_zero <- b$start == b$end
+  b_start <- b$start - b_zero
+  b_end <- b$end + b_zero
+
+  # bedtools indexes the whole -b file by bin before it looks at -a, and
+  # widening a zero-length -b feature at position 0 gives it a start of -1,
+  # which its bin index refuses: it rejects the file, prints nothing and exits
+  # 1 -- whatever chromosome the feature sits on, even when it shares the file
+  # with perfectly good features, and even when -a is empty. Measured on
+  # v2.31.1; match the oracle rather than inventing a kinder answer it would
+  # not agree with. Zero-length features are otherwise legal in -b, and legal
+  # at position 0 in -a, where a12 (chr2 0 0) survives. R/intersect.R refuses
+  # the same case in the same words.
+  if (any(b_start < 0L)) {
+    die_data(basename(opt$b),
+             ": zero-length feature at position 0 cannot be indexed")
+  }
+
   if (nrow(a) == 0L) return(invisible(NULL))
 
-  # Widen zero-length records by one base each side (see header comment).
   a_zero <- a$start == a$end
   a_start <- a$start - a_zero
   a_end <- a$end + a_zero
-  b_start <- b$start - (b$start == b$end)
-  b_end <- b$end + (b$start == b$end)
 
   b_by_chrom <- split(seq_len(nrow(b)), b$chrom)
 

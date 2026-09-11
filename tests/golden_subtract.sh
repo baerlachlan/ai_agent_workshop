@@ -48,11 +48,15 @@ check() {
 # they hit hardest.
 check "subtract a.bed - b.bed" -- subtract -a "$DATA/a.bed" -b "$DATA/b.bed"
 
-# Reversed, so that -a carries b.bed's zero-length features (b02, b07) instead.
-# a.bed cannot be used as -b as it stands: bedtools widens every zero-length
-# record by one base each side, so a12 (chr2 0 0) becomes start -1 and bedtools
-# aborts with "illegal bin number -1", exit 1. That is a bedtools limit with no
-# right answer to diff against, so a12 is dropped for this case only.
+# a.bed as -b is the refusal case: widening a12 (chr2 0 0) gives it a start of
+# -1, which bedtools' bin index rejects, so it prints nothing and exits 1. Both
+# sides of this check must agree on that -- check() compares the exit code as
+# well as stdout, and stderr is not part of the contract (tests/README.md).
+check "subtract b.bed - a.bed (both refuse: a12 at 0)" \
+  -- subtract -a "$DATA/b.bed" -b "$DATA/a.bed"
+
+# The same pair with a12 dropped, so that -a still carries b.bed's zero-length
+# features (b02, b07) through a run that produces real output.
 grep -v $'^chr2\t0\t0\t' "$DATA/a.bed" > "$tmp/a-no-zero-at-0.bed"
 check "subtract b.bed - a.bed (minus a12)" \
   -- subtract -a "$DATA/b.bed" -b "$tmp/a-no-zero-at-0.bed"

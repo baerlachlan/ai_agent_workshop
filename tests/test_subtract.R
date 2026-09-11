@@ -43,8 +43,11 @@ run_subprocess <- function(argv) {
                   file.path(ROOT, "R", "subtract.R"),
                   paste(sprintf('"%s"', argv), collapse = ", "))
   err <- tempfile()
-  st <- system2("Rscript", c("-e", shQuote(expr)), stdout = NULL, stderr = err)
-  list(status = st, stderr = paste(readLines(err, warn = FALSE), collapse = "\n"))
+  out <- tempfile()
+  st <- system2("Rscript", c("-e", shQuote(expr)), stdout = out, stderr = err)
+  list(status = st,
+       stdout = readLines(out, warn = FALSE),
+       stderr = paste(readLines(err, warn = FALSE), collapse = "\n"))
 }
 
 # --- the ordinary cases ----------------------------------------------------
@@ -95,9 +98,45 @@ same("feature at position 0 trims correctly",
      "chr1\t0\t100\ta", "chr1\t0\t50\tb",
      "chr1\t50\t100\ta")
 
-# No test for a zero-length -b at position 0: it widens to start -1, where
-# bedtools aborts ("illegal bin number -1") and exits 1. There is no oracle to
-# encode, so nothing is asserted about it.
+# --- zero-length -b at position 0: the oracle refuses the file ---------------
+# Widening puts its start at -1, which bedtools' bin index rejects. bedtools
+# prints nothing and exits 1, so we do too (SPEC.md section 8 requires the exit
+# code to match, not just stdout). Measured on v2.31.1: the refusal covers the
+# whole -b file, whatever chromosome the feature is on and whatever else the
+# file contains.
+
+bfile <- function(lines) { f <- tempfile(); writeLines(lines, f); f }
+keep_a <- bfile("chr1\t10\t20\tkeep\t0\t+")
+
+r <- run_subprocess(c("-a", keep_a, "-b", bfile("chr1\t0\t0\tz")))
+ok("zero-length -b at 0: exits 1", r$status == 1)
+ok("zero-length -b at 0: prints nothing", identical(r$stdout, character(0)))
+ok("zero-length -b at 0: is reported",
+   grepl("zero-length feature at position 0 cannot be indexed", r$stderr))
+
+# Not a property of the -a feature: an unrelated chromosome still refuses.
+r <- run_subprocess(c("-a", keep_a, "-b", bfile("chrZZ\t0\t0\tz")))
+ok("zero-length -b at 0 on another chromosome still refuses", r$status == 1)
+
+# Nor of the file being otherwise empty: one bad record poisons the file.
+r <- run_subprocess(c("-a", keep_a,
+                      "-b", bfile(c("chr1\t5\t9\tw", "chr1\t0\t0\tz"))))
+ok("zero-length -b at 0 beside a good feature still refuses", r$status == 1)
+
+# bedtools indexes -b before it reads -a, so an empty -a does not save it.
+r <- run_subprocess(c("-a", bfile(character(0)), "-b", bfile("chr1\t0\t0\tz")))
+ok("zero-length -b at 0 refuses even when -a is empty", r$status == 1)
+
+# The control: position 0 is the only place it bites.
+r <- run_subprocess(c("-a", keep_a, "-b", bfile("chr1\t50\t50\tz")))
+ok("zero-length -b away from 0 is accepted", r$status == 0)
+ok("zero-length -b away from 0 leaves the feature alone",
+   identical(r$stdout, "chr1\t10\t20\tkeep\t0\t+"))
+
+# And it is a -b restriction only: a12 (chr2 0 0) in -a is legal and survives.
+r <- run_subprocess(c("-a", bfile("chr2\t0\t0\ta12"), "-b", keep_a))
+ok("zero-length -a at 0 is still legal", r$status == 0)
+ok("zero-length -a at 0 still survives", identical(r$stdout, "chr2\t0\t0\ta12"))
 
 # --- bookended: no overlap, and no trim ------------------------------------
 # SPEC.md section 4: a.end == b.start is not an overlap. A non-zero-length -b
