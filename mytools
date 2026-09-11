@@ -2,10 +2,26 @@
 
 VERSION <- "0.1.0"
 
+COMMANDS <- c("sort", "merge", "intersect", "subtract")
+
 usage <- function() {
   cat("usage: mytools <command> [options]\n",
+      "\n",
+      "commands:\n",
+      "  sort       -i <file|->\n",
+      "  merge      -i <file|-> [-d N]\n",
+      "  intersect  -a <file|-> -b <file> [-u | -v | -wa]\n",
+      "  subtract   -a <file|-> -b <file>\n",
+      "\n",
       "       mytools --version\n",
       sep = "", file = stderr())
+}
+
+script_dir <- function() {
+  args <- commandArgs(trailingOnly = FALSE)
+  f <- sub("^--file=", "", grep("^--file=", args, value = TRUE))
+  if (length(f) == 0) return(getwd())
+  dirname(normalizePath(f[1]))
 }
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -15,5 +31,32 @@ if (length(args) == 1 && args[1] == "--version") {
   quit(save = "no", status = 0)
 }
 
-usage()
-quit(save = "no", status = 2)
+if (length(args) == 1 && args[1] %in% c("--help", "-h")) {
+  usage()
+  quit(save = "no", status = 0)
+}
+
+if (length(args) == 0) {
+  usage()
+  quit(save = "no", status = 2)
+}
+
+cmd <- args[1]
+here <- script_dir()
+source(file.path(here, "R", "bed.R"))
+
+if (!cmd %in% COMMANDS) {
+  cat(sprintf("unknown command: %s\n", cmd), file = stderr())
+  usage()
+  quit(save = "no", status = 2)
+}
+
+impl <- file.path(here, "R", paste0(cmd, ".R"))
+if (!file.exists(impl)) {
+  cat(sprintf("%s: not implemented yet\n", cmd), file = stderr())
+  quit(save = "no", status = 2)
+}
+
+source(impl)
+handler <- get(paste0("cmd_", cmd))
+handler(args[-1])
